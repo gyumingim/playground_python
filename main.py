@@ -9,14 +9,18 @@ import os
 import requests
 from typing import Optional
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# .local.env 파일에서 환경 변수 로드
+load_dotenv('.local.env')
 
 # Google OAuth 클라이언트 설정
-GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID"
-GOOGLE_CLIENT_SECRET = "YOUR_GOOGLE_CLIENT_SECRET"
-GOOGLE_REDIRECT_URI = "http://localhost:8000/callback"
-GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_USER_INFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+GOOGLE_AUTH_URL = os.getenv("GOOGLE_AUTH_URL")
+GOOGLE_TOKEN_URL = os.getenv("GOOGLE_TOKEN_URL")
+GOOGLE_USER_INFO_URL = os.getenv("GOOGLE_USER_INFO_URL")
 
 app = FastAPI()
 
@@ -51,7 +55,7 @@ async def login_google():
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "response_type": "code",
-        "scope": "openid email profile",
+        "scope": "openid email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "prompt": "select_account",
     }
@@ -78,12 +82,18 @@ async def auth_callback(request: Request, code: str):
     token_response = requests.post(GOOGLE_TOKEN_URL, data=token_data)
     token_response_json = token_response.json()
     
+    # 디버깅: 전체 응답 출력
+    print("토큰 응답:", token_response_json)
+    
     # 토큰 응답에서 액세스 토큰 추출
     access_token = token_response_json.get("access_token")
     if not access_token:
+        # 더 자세한 오류 정보 가져오기
+        error_detail = token_response_json.get("error_description", token_response_json.get("error", "알 수 없는 오류"))
+        print(f"액세스 토큰 가져오기 오류: {error_detail}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to retrieve access token"
+            detail=f"액세스 토큰을 가져오지 못했습니다: {error_detail}"
         )
     
     # 액세스 토큰으로 사용자 정보 요청
@@ -102,7 +112,7 @@ async def auth_callback(request: Request, code: str):
     )
     
     # 세션에 사용자 정보 저장
-    request.session["user"] = user.dict()
+    request.session["user"] = user.model_dump()  # Changed from user.dict() to user.model_dump()
     
     # 홈 페이지로 리디렉션
     return RedirectResponse(url="/home")
